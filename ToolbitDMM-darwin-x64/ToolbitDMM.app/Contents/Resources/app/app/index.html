@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Toolbit DMM</title>
+  <link href="https://fonts.googleapis.com/css?family=Noto+Sans&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+
+<body id="main">
+  <div id="wrap">
+    <div class="content">
+      <div>
+        <input id="disp-val" class="disp" type="text" name="value" readonly="readonly">
+        <input id="disp-unit" class="disp" type="text" name="unit" readonly="readonly">
+      </div>
+      <div class="clearfix">
+        <select id="range" name="range" class="mode">
+          <option selected="selected">Auto</option>
+          <option></option>
+          <option>m</option>
+          <option>u</option>
+        </select>
+        <br>
+        <select id="mode" name="mode" class="mode">
+          <option selected="selected">V</option>
+          <option>A</option>
+        </select>
+      </div>
+      <div>
+        <select id="interval" name="interval" class="mode">
+          <option>Fast</option>
+          <option selected="selected">Mid</option>
+          <option>Slow</option>
+        </select>
+      </div>
+      <div class="switches clearfix">
+        <input id="hold" type="checkbox" name="hold" /><label for="hold">HOLD</label>
+        <!--
+        <input id="graph" type="checkbox" name="graph" checked="checked" /><label for="graph">GRAPH</label>
+        --> 
+      </div>
+      <div id="chart-container"></div>
+      <div class="clearfix">
+        <button id="clear" type="clear" name="btn">CLEAR</button>
+      </div>
+    </div>
+  </div>
+  <div class="adv">
+    <a><img src="images/banner.png" alt="banner"></a>
+  </div>
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/canvasjs/1.7.0/canvasjs.min.js"></script>
+  <script src="js/index.js"></script>
+</body>
