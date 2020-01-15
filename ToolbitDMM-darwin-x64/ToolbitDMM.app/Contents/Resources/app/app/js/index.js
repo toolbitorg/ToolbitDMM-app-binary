@@ -6,36 +6,26 @@
 //console.warn = function(){/* NOP */};
 //console.error = function(){/* NOP */};
 
-const TbiDeviceManager=require('./tbi.node').TbiDeviceManager
-const Luke=require('./tbi.node').Luke
+var moment=require('moment');
+var Chartist=require('chartist');
+require('./js/chartist-plugin-zoom/dist/chartist-plugin-zoom');
+
+const TbiDeviceManager=require('toolbit-lib').TbiDeviceManager;
+const Dmm=require('toolbit-lib').Dmm;
 var tbiDeviceManager = new TbiDeviceManager();
 console.log('The number of connected USB device: ' + tbiDeviceManager.getDeviceNum());
-var luke = new Luke();
+var dmm = new Dmm();
 
 var dmmMode;
 var dmmRange;
 var timeInterval;
 var holdChecked = false;
 var graphChecked = false;
-var clearPlotdata = false;
-var plotdata = [{x: 0, y: 0}];
-var counter = 0;
-
-/*
-var getRadioValue = function(name) {
-  var result = '';
-  var elems = document.getElementsByName(name);
-
-  for(var i=0, len=elems.length; i<len; i++) {
-    var elem = elems.item(i);
-    if(elem.checked) {
-      result = elem.value;
-      break;
-    }
-  }
-  return result;
-};
-*/
+var clearGraph = false;
+var runChecked = false;
+var plotData = [];
+var plotStart = new Date();
+var chart;
 
 var setDmmMode = function(mode) {
   dmmMode = mode;
@@ -49,36 +39,50 @@ var setDmmRange = function(range) {
 
 var setTimeInterval = function(t) {
   if(t=='Fast') {
-    timeInterval = 100;
+    timeInterval = 99;
   } else if(t=='Mid') {
-    timeInterval = 1000;
+    timeInterval = 999;
   } else if(t=='Slow') {
-    timeInterval = 3000;
+    timeInterval = 2999;
   };
   console.log('timeInterval:' + t);
 };
 
 var chartContainer = document.getElementById('chart-container');
-var chart = new CanvasJS.Chart(chartContainer, {
-  animationEnabled: true,
-  zoomEnabled: true,
-  title: {
-//    text: "Graph"
-  },
-  data: [{
-    type: 'line',
-    dataPoints: plotdata
-  }]
-});
+var chart = new Chartist.Line(chartContainer, {}, {});
 
-function initialize() {
+function exportData(records) {
+   let data = JSON.stringify(records);
+   let bom  = new Uint8Array([0xEF, 0xBB, 0xBF]);
+   let blob = new Blob([bom, data], {type: 'text'});
+   let url = (window.URL || window.webkitURL).createObjectURL(blob);
+   let link = document.createElement('a');
+   link.download = 'log-' + moment(plotStart).format('YYYYMMDD-HHmm') + '.json';
+   link.href = url;
+   document.body.appendChild(link);
+   link.click();
+   document.body.removeChild(link);
+};
 
-  if(!luke.open()) {
+function disableElements(elems) {
+  for(var i=0; i<elems.length; i++) {
+    elems[i].disabled = true;
+  }
+}
+
+function enableElements(elems) {
+  for(var i=0; i<elems.length; i++) {
+    elems[i].disabled = false;
+  }
+}
+
+function openDevice() {
+  if(!dmm.open()) {
     // Polling connection of device
-    window.setTimeout(initialize, 3000);
+    window.setTimeout(openDevice, 3000);
     return;
   }
-  clearPlotdata = true;
+  clearGraph = true;
 
   setDmmMode(document.getElementById('mode').value);
   setDmmRange(document.getElementById('range').value);
@@ -86,40 +90,137 @@ function initialize() {
 
   document.getElementById('mode').addEventListener('change', (event) => {
     setDmmMode(event.target.value);
-    clearPlotdata = true;
+    clearGraph = true;
   });
   document.getElementById('range').addEventListener('change', (event) => {
     setDmmRange(event.target.value);
   });
   document.getElementById('interval').addEventListener('change', (event) => {
     setTimeInterval(event.target.value);
-    clearPlotdata = true;
+    clearGraph = true;
   });
   document.getElementById('hold').addEventListener('change', function() {
     holdChecked = this.checked;
     console.log('holdChecked:' + holdChecked);
   });
+
+  document.getElementById('run').addEventListener('change', function() {
+    runChecked = this.checked;
+    if(runChecked) {
+      clearGraph = true;
+      document.getElementById('save').disabled = false;
+    }
+    console.log('runChecked:' + runChecked);
+  });
+  document.getElementById('save').addEventListener('click', function() {
+    exportData(plotData);
+  });
+
+  enableElements(document.getElementById('main').getElementsByTagName('input'));
+  enableElements(document.getElementById('main').getElementsByTagName('select'));
+  enableElements(document.getElementById('main').getElementsByTagName('button'));
+  document.getElementById('save').disabled = true;
+
+  window.setTimeout(acquisition, timeInterval);
+}
+
+function initialize() {
+  disableElements(document.getElementById('main').getElementsByTagName('input'));
+  document.getElementById('graph').disabled = false;
+  disableElements(document.getElementById('main').getElementsByTagName('select'));
+  disableElements(document.getElementById('main').getElementsByTagName('button'));
+  document.getElementById('load').disabled = false;
+
   document.getElementById('graph').addEventListener('change', function() {
     graphChecked = this.checked;
     if(graphChecked) {
-      clearPlotdata = true;
-      document.getElementById('chart-container').style.display = 'block';
-      document.getElementById('graph-menu').style.display = 'block';
+      document.getElementById('chart-container').className = '';
+      document.getElementById('graph-menu').className = '';
+      document.getElementById('run').click();
       window.resizeBy(0, 436);
     } else {
-      document.getElementById('chart-container').style.display = 'none';
-      document.getElementById('graph-menu').style.display = 'none';
+      document.getElementById('chart-container').className = 'hide';
+      document.getElementById('graph-menu').className = 'hide';
+      if(document.getElementById('run').checked) {
+        document.getElementById('run').click();
+      }
       window.resizeBy(0, -436);
     }
     console.log('graphChecked:' + graphChecked);
   });
-  document.getElementById('clear').addEventListener('click', function() {
-    clearPlotdata = true;
-    console.log('clearPlotdata: ' + clearPlotdata);
+
+  document.getElementById('load').addEventListener('click', function() {
+    if(runChecked) {
+      if(window.confirm("Is it OK to stop recording?")) {
+        document.getElementById('run').click();
+      } else {
+        return;
+      }
+    }
+
+    let fin = document.createElement('input');
+    fin.type = 'file';
+    fin.accept = '.json';
+    fin.addEventListener('change', function(e) {
+      var file = e.target.files[0];
+      if(file.type.match('application/json')) {
+        var reader = new FileReader();
+        reader.addEventListener('load', function() {
+          plotData = JSON.parse(this.result);
+          plotStart = new Date(0);
+          console.log('Loaded plot data');
+          initializeGraph();
+        })
+      reader.readAsText(file);
+      document.getElementById('save').disabled = true;
+      }
+    });
+    fin.click();
   });
 
-  window.setTimeout(acquisition, timeInterval);
+  openDevice();
 };
+
+function initializeGraph() {
+  chart = new Chartist.Line(chartContainer,
+  {  // data
+    series: [
+      {
+        name: 'series-1',
+        data: plotData
+      },
+      {
+        name: 'to-show-zero-point',
+        data: [{x: 0, y: 0}]
+      }
+    ]
+  }, {  // options
+    lineSmooth: false,
+    showPoint: false,
+    axisX: {
+      type: Chartist.FixedScaleAxis,
+      divisor: 5,
+      labelInterpolationFnc: function(value) {
+        var mom = moment(value + plotStart.getTimezoneOffset()*1000*60);
+        if(moment(plotStart).isDST()) {
+          mom.add(1, 'hours');
+        }
+        if(mom.format("H")!=0) {
+          return mom.format("H:m:ss.S");
+        } else if(mom.format("m")!=0) {
+          return mom.format("m:ss.S");
+        }
+        return mom.format("s.S");
+      }
+    },
+    plugins: [
+      Chartist.plugins.zoom({
+        resetOnRightMouseBtn: true,
+//        onZoom: function(chart, reset) { storeReset(reset); }
+      })
+    ]
+  });  // end of options
+}
 
 function acquisition() {
   window.setTimeout(acquisition, timeInterval);
@@ -130,21 +231,23 @@ function acquisition() {
   var dispUnit = document.getElementById('disp-unit');
 
   if(dmmMode=='V') {
-    val = luke.getVoltage();
+    val = dmm.getVoltage();
   } else if(dmmMode=='A') {
-    val = luke.getCurrent();
+    val = dmm.getCurrent();
   };
+  var t = new Date();
 
-  if(clearPlotdata) {
-    plotdata.length = 0;
-    counter = 0;
-    clearPlotdata = false;
+  if(clearGraph) {
+    plotData.length = 0;
+    plotData = [];
+    clearGraph = false;
+    plotStart = t;
+    initializeGraph();
   }
 
-  if(graphChecked) {
-    plotdata.push({x: counter,y: val});
-    //plotdata.push({x: counter,y: counter})
-    counter++;
+   if(runChecked) {
+    var tdiff = t.getTime() - plotStart.getTime();
+    plotData.push({x: tdiff, y: val});
   }
 
   if(!holdChecked) {
@@ -177,13 +280,12 @@ function acquisition() {
         dispVal.value = val.toFixed(4-len);
       }
     }
-
     dispUnit.value = unit + dmmMode;
+    console.log('value[' + t.toJSON() + ']:' + dispVal.value);
+  }
 
-    console.log('value:' + dispVal.value);
-    if(graphChecked) {
-      chart.render();
-    }
+  if(runChecked) {
+    chart.update();
   }
 };
 
